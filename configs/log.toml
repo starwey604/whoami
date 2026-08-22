@@ -1,0 +1,5 @@
+[console_sink]
+enable = true
+
+[file_sink]
+enable = true
