@@ -10,7 +10,7 @@ include(FindDependencies)
 add_executable(${PROJECT_NAME})
 
 add_subdirectory(src)
+add_subdirectory(samples/emulator)
 
 include(GrepConfigs)
 include(GrepAssets)
-

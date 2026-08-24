@@ -1,4 +1,5 @@
 file(GLOB_RECURSE GAME_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
+list(REMOVE_ITEM GAME_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/vm/vm.cpp")
 target_sources(${PROJECT_NAME} PUBLIC ${GAME_SOURCES})
 target_include_directories(${PROJECT_NAME} PUBLIC ${PROJECT_SOURCE_DIR}/include)
 
@@ -52,8 +53,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(tinyemu_riscv PUBLIC rt)
 endif()
 
+add_library(whoami_vm STATIC vm/vm.cpp)
+target_include_directories(whoami_vm PUBLIC ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(whoami_vm PUBLIC tinyemu_riscv)
+
 target_link_libraries(${PROJECT_NAME} PUBLIC
-        tinyemu_riscv
+        whoami_vm
         SDL3::SDL3 SDL3_image::SDL3_image SDL3_sound::SDL3_sound SDL3_ttf::SDL3_ttf
         spdlog::spdlog tomlplusplus::tomlplusplus
         stdc++exp
