@@ -2,3 +2,6 @@
 	path = os/buildroot
 	url = https://github.com/buildroot/buildroot.git
 	branch = 2026.05.x
+[submodule "3rdparty/tinyemu"]
+	path = 3rdparty/tinyemu
+	url = https://github.com/dearchap/tinyemu
