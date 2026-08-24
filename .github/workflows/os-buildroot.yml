@@ -1,0 +1,132 @@
+name: Build OS image
+
+on:
+  push:
+    tags:
+      - 'osv*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Optional osv* tag to use when publishing a manual Release.'
+        required: false
+        type: string
+      publish_release:
+        description: 'Create/update the Release and attach the image bundle.'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - id: version
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          PUBLISH_RELEASE: ${{ inputs.publish_release }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            version="$REF_NAME"
+          elif [[ "$PUBLISH_RELEASE" == "true" ]]; then
+            version="$RELEASE_TAG"
+            if [[ -z "$version" ]]; then
+              echo 'release_tag is required when publish_release is enabled.' >&2
+              exit 1
+            fi
+          elif [[ -n "$RELEASE_TAG" ]]; then
+            version="$RELEASE_TAG"
+          else
+            version="manual-$RUN_NUMBER"
+          fi
+
+          if [[ "$EVENT_NAME" == "push" || "$PUBLISH_RELEASE" == "true" ]] && [[ ! "$version" =~ ^osv ]]; then
+            echo "Release tags must begin with osv: $version" >&2
+            exit 1
+          fi
+
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Buildroot host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            bc bison build-essential cpio file flex git libncurses-dev \
+            perl python3 rsync unzip wget
+
+      - name: Restore Buildroot downloads
+        uses: actions/cache@v4
+        with:
+          path: os/buildroot/dl
+          key: buildroot-downloads-${{ runner.os }}
+
+      - name: Build Buildroot guest
+        env:
+          JOBS: 2
+        run: ./os/build.sh
+
+      - name: Package OS images
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          tar --create --xz --file "dist/whoami-os-${VERSION}.tar.xz" \
+            -C os/output images .config
+          sha256sum "dist/whoami-os-${VERSION}.tar.xz" \
+            > "dist/whoami-os-${VERSION}.tar.xz.sha256"
+
+      - name: Upload Buildroot images
+        uses: actions/upload-artifact@v4
+        with:
+          name: whoami-os-${{ needs.metadata.outputs.version }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            dist/whoami-os-*.tar.xz
+            dist/whoami-os-*.tar.xz.sha256
+            os/output/images/**
+            os/output/.config
+
+  release:
+    needs:
+      - metadata
+      - build
+    if: github.event_name == 'push' || inputs.publish_release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: whoami-os-${{ needs.metadata.outputs.version }}
+          path: release-assets
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+          TARGET: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release create "$VERSION" --target "$TARGET" --title "$VERSION" --generate-notes
+          fi
+          gh release upload "$VERSION" release-assets/dist/whoami-os-*.tar.xz release-assets/dist/whoami-os-*.sha256 --clobber
