@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.31)
-project(whoami VERSION 0.1.0 LANGUAGES CXX)
+project(whoami VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -13,5 +13,4 @@ add_subdirectory(src)
 
 include(GrepConfigs)
 include(GrepAssets)
-
 

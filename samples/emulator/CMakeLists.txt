@@ -1,12 +1,18 @@
-file(GLOB_RECURSE GAME_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
-target_sources(${PROJECT_NAME} PUBLIC ${GAME_SOURCES})
-target_include_directories(${PROJECT_NAME} PUBLIC ${PROJECT_SOURCE_DIR}/include)
+cmake_minimum_required(VERSION 3.31)
+project(whoami_emulator_sample LANGUAGES C CXX)
 
-set(TINYEMU_DIR "${PROJECT_SOURCE_DIR}/3rdparty/tinyemu")
+if(NOT UNIX)
+    message(FATAL_ERROR "The terminal sample currently requires a POSIX host.")
+endif()
+
+set(CMAKE_CXX_STANDARD 26)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+get_filename_component(WHOAMI_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+set(TINYEMU_DIR "${WHOAMI_SOURCE_DIR}/3rdparty/tinyemu")
 
 add_library(tinyemu_riscv_cpu32 OBJECT "${TINYEMU_DIR}/riscv_cpu.c")
 add_library(tinyemu_riscv_cpu64 OBJECT "${TINYEMU_DIR}/riscv_cpu.c")
-
 foreach(target tinyemu_riscv_cpu32 tinyemu_riscv_cpu64)
     target_include_directories(${target} PRIVATE "${TINYEMU_DIR}")
     target_compile_definitions(${target} PRIVATE
@@ -16,7 +22,6 @@ foreach(target tinyemu_riscv_cpu32 tinyemu_riscv_cpu64)
             CONFIG_RISCV_MAX_XLEN=64
     )
 endforeach()
-
 target_compile_definitions(tinyemu_riscv_cpu32 PRIVATE MAX_XLEN=32)
 target_compile_definitions(tinyemu_riscv_cpu64 PRIVATE MAX_XLEN=64)
 
@@ -48,13 +53,14 @@ target_compile_definitions(tinyemu_riscv PRIVATE
         _LARGEFILE_SOURCE
         CONFIG_RISCV_MAX_XLEN=64
 )
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(tinyemu_riscv PUBLIC rt)
-endif()
+target_link_libraries(tinyemu_riscv PUBLIC rt)
 
-target_link_libraries(${PROJECT_NAME} PUBLIC
-        tinyemu_riscv
-        SDL3::SDL3 SDL3_image::SDL3_image SDL3_sound::SDL3_sound SDL3_ttf::SDL3_ttf
-        spdlog::spdlog tomlplusplus::tomlplusplus
-        stdc++exp
+add_library(whoami_vm STATIC "${WHOAMI_SOURCE_DIR}/src/vm/vm.cpp")
+target_include_directories(whoami_vm PUBLIC "${WHOAMI_SOURCE_DIR}/include")
+target_link_libraries(whoami_vm PUBLIC tinyemu_riscv)
+
+add_executable(whoami_emulator_sample main.cpp)
+target_link_libraries(whoami_emulator_sample PRIVATE whoami_vm)
+target_compile_definitions(whoami_emulator_sample PRIVATE
+        WHOAMI_SOURCE_DIR="${WHOAMI_SOURCE_DIR}"
 )
