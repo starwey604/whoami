@@ -1,4 +1,9 @@
-# Drivers required before the ext4 root filesystem can be mounted.
+# TinyEMU exposes an OpenSBI booted RISC-V machine with a 16550 UART and
+# VirtIO MMIO block/console devices. Keep the entire boot path built in: the
+# root filesystem must be available before userspace can load modules.
+# The upstream RISC-V defconfig hides several default-on options unless this
+# is enabled; without it Kconfig silently restores VT, SCSI, and input support.
+CONFIG_EXPERT=y
 CONFIG_DEVTMPFS=y
 CONFIG_DEVTMPFS_MOUNT=y
 CONFIG_VIRTIO=y
@@ -6,3 +11,61 @@ CONFIG_VIRTIO_MMIO=y
 CONFIG_VIRTIO_BLK=y
 CONFIG_VIRTIO_CONSOLE=y
 CONFIG_EXT4_FS=y
+
+# The guest is device-tree based and has neither ACPI/EFI nor PCI hardware.
+# Disabling their roots also removes the large collection of board-specific
+# PCI host controller and ACPI platform drivers from the RISC-V defconfig.
+# CONFIG_ACPI is not set
+# CONFIG_EFI is not set
+# CONFIG_EFI_STUB is not set
+# CONFIG_PCI is not set
+
+# TinyEMU's terminal is VirtIO console, not a framebuffer or an input device.
+# CONFIG_VT is not set
+# CONFIG_VGA_ARB is not set
+# CONFIG_DRM is not set
+# CONFIG_FB is not set
+# CONFIG_INPUT is not set
+# CONFIG_SERIO is not set
+# CONFIG_HID is not set
+# CONFIG_VIRTIO_INPUT is not set
+# CONFIG_SCSI_VIRTIO is not set
+# CONFIG_INPUT_KEYBOARD is not set
+# CONFIG_INPUT_MOUSE is not set
+# CONFIG_SERIO_SERPORT is not set
+# CONFIG_VT_CONSOLE is not set
+
+# No corresponding devices are exposed by the VM. These subsystems otherwise
+# account for substantial probe work and kernel image size at every boot.
+# CONFIG_SCSI is not set
+# CONFIG_SCSI_LOWLEVEL is not set
+# CONFIG_BLK_DEV_SD is not set
+# CONFIG_ATA is not set
+# CONFIG_CDROM is not set
+# CONFIG_USB_SUPPORT is not set
+# CONFIG_MMC is not set
+# CONFIG_SOUND is not set
+# CONFIG_MEDIA_SUPPORT is not set
+# CONFIG_WATCHDOG is not set
+# CONFIG_IOMMU_SUPPORT is not set
+# CONFIG_NET_9P is not set
+# CONFIG_NFS_FS is not set
+# CONFIG_BLK_DEV_LOOP is not set
+# CONFIG_VIRTIO_NET is not set
+# CONFIG_WLAN is not set
+
+# Retain the DT-backed UART used for OpenSBI's early console, then hand off to
+# the VirtIO hvc0 console once Linux has initialized its drivers.
+CONFIG_SERIAL_8250=y
+CONFIG_SERIAL_8250_CONSOLE=y
+CONFIG_SERIAL_OF_PLATFORM=y
+CONFIG_HVC_DRIVER=y
+
+# The optional 8250 transports below require hardware absent from TinyEMU.
+# CONFIG_SERIAL_8250_PNP is not set
+# CONFIG_SERIAL_8250_DMA is not set
+# CONFIG_SERIAL_8250_PCILIB is not set
+# CONFIG_SERIAL_8250_PCI is not set
+# CONFIG_SERIAL_8250_EXAR is not set
+# CONFIG_SERIAL_8250_DW is not set
+# CONFIG_SERIAL_8250_PERICOM is not set
