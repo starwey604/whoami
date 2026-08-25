@@ -1,6 +1,7 @@
 #include "vm/vm.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <cstdint>
 #include <deque>
 #include <fstream>
@@ -58,12 +59,48 @@ struct VM::Impl {
         return 0;
     }
 
+    static std::int64_t get_sector_count(BlockDevice* device) {
+        const auto& self = *static_cast<Impl*>(device->opaque);
+        return static_cast<std::int64_t>(self.rootfs.size() / 512);
+    }
+
+    static int read_sectors(BlockDevice* device, std::uint64_t sector,
+                            std::uint8_t* output, int count,
+                            BlockDeviceCompletionFunc*, void*) {
+        auto& self = *static_cast<Impl*>(device->opaque);
+        constexpr std::size_t kSectorSize = 512;
+        const auto offset = static_cast<std::size_t>(sector) * kSectorSize;
+        const auto size = static_cast<std::size_t>(std::max(count, 0)) * kSectorSize;
+        if (offset > self.rootfs.size() || size > self.rootfs.size() - offset) {
+            return -1;
+        }
+        std::memcpy(output, self.rootfs.data() + offset, size);
+        return 0;
+    }
+
+    static int write_sectors(BlockDevice* device, std::uint64_t sector,
+                             const std::uint8_t* input, int count,
+                             BlockDeviceCompletionFunc*, void*) {
+        auto& self = *static_cast<Impl*>(device->opaque);
+        constexpr std::size_t kSectorSize = 512;
+        const auto offset = static_cast<std::size_t>(sector) * kSectorSize;
+        const auto size = static_cast<std::size_t>(std::max(count, 0)) * kSectorSize;
+        if (offset > self.rootfs.size() || size > self.rootfs.size() - offset) {
+            return -1;
+        }
+        // Snapshot semantics: writes live only for the lifetime of this VM.
+        std::memcpy(self.rootfs.data() + offset, input, size);
+        return 0;
+    }
+
     VMConfig config;
     OutputHandler output_handler;
     std::vector<std::uint8_t> bios;
     std::vector<std::uint8_t> kernel;
+    std::vector<std::uint8_t> rootfs;
     std::deque<std::uint8_t> pending_input;
     CharacterDevice console{};
+    BlockDevice block_device{};
     VirtMachine* machine{nullptr};
 };
 
@@ -87,6 +124,12 @@ void VM::start() {
 
     impl_->bios = read_binary_file(impl_->config.bios_image);
     impl_->kernel = read_binary_file(impl_->config.kernel_image);
+    if (!impl_->config.rootfs_image.empty()) {
+        impl_->rootfs = read_binary_file(impl_->config.rootfs_image);
+        if ((impl_->rootfs.size() % 512) != 0) {
+            throw std::invalid_argument("VM rootfs image size must be a multiple of 512 bytes");
+        }
+    }
 
     constexpr std::uint64_t kMebibyte = 1024 * 1024;
     constexpr std::uint64_t kKernelAlignment = 2 * 1024 * 1024;
@@ -110,6 +153,15 @@ void VM::start() {
     parameters.files[VM_FILE_BIOS].len = static_cast<int>(impl_->bios.size());
     parameters.files[VM_FILE_KERNEL].buf = impl_->kernel.data();
     parameters.files[VM_FILE_KERNEL].len = static_cast<int>(impl_->kernel.size());
+    if (!impl_->rootfs.empty()) {
+        impl_->block_device.opaque = impl_.get();
+        impl_->block_device.get_sector_count = &Impl::get_sector_count;
+        impl_->block_device.read_async = &Impl::read_sectors;
+        impl_->block_device.write_async = &Impl::write_sectors;
+        parameters.drive_count = 1;
+        parameters.tab_drive[0].device = const_cast<char*>("virtio");
+        parameters.tab_drive[0].block_dev = &impl_->block_device;
+    }
 
     impl_->machine = virt_machine_init(&parameters);
     if (!impl_->machine) {
@@ -149,6 +201,10 @@ void VM::tick(std::uint32_t max_cycles) {
         }
     }
 
+    // TinyEMU updates its asynchronous RTC interrupt from this callback. The
+    // standalone frontend invokes it as part of its poll loop; an embedded VM
+    // must do the same or a guest which executes WFI will never wake up.
+    (void)virt_machine_get_sleep_duration(impl_->machine, 0);
     virt_machine_interp(impl_->machine, static_cast<int>(std::min<std::uint32_t>(
         max_cycles, static_cast<std::uint32_t>(std::numeric_limits<int>::max()))));
 }

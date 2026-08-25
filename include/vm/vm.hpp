@@ -13,10 +13,15 @@ namespace whoami::vm {
 struct VMConfig {
     /// OpenSBI's fw_jump.bin image.
     std::filesystem::path bios_image;
-    /// Buildroot's uncompressed RISC-V Image, with its initramfs embedded.
+    /// Buildroot's uncompressed RISC-V kernel Image.
     std::filesystem::path kernel_image;
+    /// Optional ext4 image exposed to the guest as /dev/vda.
+    std::filesystem::path rootfs_image;
     std::uint32_t memory_size_mebibytes{256};
-    std::string kernel_command_line{"console=hvc0"};
+    std::string kernel_command_line{
+        "earlycon=uart8250,mmio,0x10000000 "
+        "unaligned_scalar_speed=slow unaligned_vector_speed=unsupported "
+        "root=/dev/vda rw rootwait console=hvc0"};
 };
 
 /// A frame-driven virtual machine suitable for the game's terminal widget.

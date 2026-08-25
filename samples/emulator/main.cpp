@@ -74,13 +74,16 @@ int main(int argc, char** argv) {
         whoami::vm::VMConfig config{
             .bios_image = project_root / "os/output/images/fw_jump.bin",
             .kernel_image = project_root / "os/output/images/Image",
+            .rootfs_image = project_root / "os/output/images/rootfs.ext4",
         };
 
-        if (argc == 3) {
+        if (argc == 4) {
             config.bios_image = argv[1];
             config.kernel_image = argv[2];
+            config.rootfs_image = argv[3];
         } else if (argc != 1) {
-            std::cerr << "usage: " << argv[0] << " [fw_jump.bin Image]\n";
+            std::cerr << "usage: " << argv[0]
+                      << " [fw_jump.bin Image rootfs.ext4]\n";
             return EXIT_FAILURE;
         }
 

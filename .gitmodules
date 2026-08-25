@@ -4,4 +4,4 @@
 	branch = 2026.05.x
 [submodule "3rdparty/tinyemu"]
 	path = 3rdparty/tinyemu
-	url = https://github.com/dearchap/tinyemu
+	url = https://github.com/starwey604/tinyemu
