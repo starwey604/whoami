@@ -26,12 +26,13 @@ struct Layout {
     Rect requests;
     Rect terminal;
     Rect tools;
+    bool show_tools{};
 };
 
 Layout calculate_layout(const GpuRenderer& renderer) {
     const float w = static_cast<float>(renderer.width());
     const float h = static_cast<float>(renderer.height());
-    const float scale = std::clamp(std::min(w / 1920.0F, h / 1080.0F), 0.72F, 1.6F);
+    const float scale = std::clamp(std::min(w / 1920.0F, h / 1080.0F), 0.80F, 1.6F);
     const float safe = 52.0F * scale;
     const float gap = 18.0F * scale;
     const float header_h = 68.0F * scale;
@@ -39,9 +40,13 @@ Layout calculate_layout(const GpuRenderer& renderer) {
     const float content_y = safe + header_h + gap;
     const float content_h = h - content_y - footer_h - safe - gap;
     const float left_w = std::clamp(w * 0.22F, 270.0F * scale, 420.0F * scale);
-    const float right_w = std::clamp(w * 0.18F, 230.0F * scale, 340.0F * scale);
+    const bool show_tools = w >= 1200.0F;
+    const float right_w = show_tools
+                              ? std::clamp(w * 0.18F, 230.0F * scale, 340.0F * scale)
+                              : 0.0F;
     const Rect requests{safe, content_y, left_w, content_h};
     const Rect tools{w - safe - right_w, content_y, right_w, content_h};
+    const float terminal_right = show_tools ? tools.x - gap : w - safe;
     return {
         .scale = scale,
         .safe = safe,
@@ -49,8 +54,9 @@ Layout calculate_layout(const GpuRenderer& renderer) {
         .header = {safe, safe, w - safe * 2.0F, header_h},
         .requests = requests,
         .terminal = {requests.x + requests.w + gap, content_y,
-                     tools.x - gap - (requests.x + requests.w + gap), content_h},
+                     terminal_right - (requests.x + requests.w + gap), content_h},
         .tools = tools,
+        .show_tools = show_tools,
     };
 }
 
@@ -118,14 +124,14 @@ void draw_mvp_shell(GpuRenderer& renderer, Terminal& terminal_model,
         renderer.stroke_rect(card, (index + 1 == request_count ? 2.0F : 1.0F) * scale,
                              {accent.r, accent.g, accent.b, progress});
         renderer.text(request.id, card.x + 14.0F * scale, card.y + 27.0F * scale,
-                      15.0F * scale, {accent.r, accent.g, accent.b, progress}, true);
+                      17.0F * scale, {accent.r, accent.g, accent.b, progress}, true);
         renderer.text(request.title, card.x + 14.0F * scale, card.y + 57.0F * scale,
-                      18.0F * scale, {text.r, text.g, text.b, progress});
+                      20.0F * scale, {text.r, text.g, text.b, progress});
         renderer.text(request.objective, card.x + 14.0F * scale, card.y + 82.0F * scale,
-                      14.0F * scale, {muted.r, muted.g, muted.b, progress});
+                      16.0F * scale, {muted.r, muted.g, muted.b, progress});
         const std::string priority = "优先级：" + std::string(request.priority);
         renderer.text(priority, card.x + 14.0F * scale, card.y + 104.0F * scale,
-                      14.0F * scale, {muted.r, muted.g, muted.b, progress});
+                      16.0F * scale, {muted.r, muted.g, muted.b, progress});
     }
 
     renderer.fill_rect(terminal, {0.006F, 0.031F, 0.045F, 0.99F});
@@ -133,9 +139,12 @@ void draw_mvp_shell(GpuRenderer& renderer, Terminal& terminal_model,
     renderer.fill_rect({terminal.x, terminal.y, terminal.w, 46.0F * scale}, panel_alt);
     renderer.text("TERMINAL /dev/hvc0", terminal.x + 18.0F * scale,
                   terminal.y + 31.0F * scale, 18.0F * scale, text, true);
-    const float font_size = 17.0F * scale;
-    const float cell_width = 10.25F * scale;
-    const float line_height = 22.0F * scale;
+    const float font_size = 20.0F * scale;
+    // JetBrains Mono's advance at this point size is ~0.67em. Keeping the
+    // metric explicit here also makes the libtsm column count conservative,
+    // so glyphs never leak into adjacent panels on compact layouts.
+    const float cell_width = 13.5F * scale;
+    const float line_height = 25.0F * scale;
     const float text_x = terminal.x + 18.0F * scale;
     const float text_y = terminal.y + 74.0F * scale;
     const auto columns = static_cast<std::uint16_t>(std::max(
@@ -169,19 +178,21 @@ void draw_mvp_shell(GpuRenderer& renderer, Terminal& terminal_model,
                       16.0F * scale, {1.0F, 0.70F, 0.68F, 1.0F}, true);
     }
 
-    renderer.fill_rect(tools, panel);
-    renderer.stroke_rect(tools, std::max(1.0F, scale), border);
-    renderer.text("AGENT TOOLS", tools.x + 20.0F * scale,
-                  tools.y + 38.0F * scale, 19.0F * scale, muted);
-    constexpr const char* tool_names[] = {"[1] READ SKILL", "[2] NOTES", "[3] SUBMIT"};
-    for (int i = 0; i < 3; ++i) {
-        const Rect button{tools.x + 16.0F * scale,
-                          tools.y + (68.0F + i * 62.0F) * scale,
-                          tools.w - 32.0F * scale, 48.0F * scale};
-        renderer.fill_rect(button, panel_alt);
-        renderer.stroke_rect(button, std::max(1.0F, scale), border);
-        renderer.text(tool_names[i], button.x + 14.0F * scale,
-                      button.y + 31.0F * scale, 17.0F * scale, text, true);
+    if (layout.show_tools) {
+        renderer.fill_rect(tools, panel);
+        renderer.stroke_rect(tools, std::max(1.0F, scale), border);
+        renderer.text("AGENT TOOLS", tools.x + 20.0F * scale,
+                      tools.y + 38.0F * scale, 19.0F * scale, muted);
+        constexpr const char* tool_names[] = {"[1] READ SKILL", "[2] NOTES", "[3] SUBMIT"};
+        for (int i = 0; i < 3; ++i) {
+            const Rect button{tools.x + 16.0F * scale,
+                              tools.y + (68.0F + i * 62.0F) * scale,
+                              tools.w - 32.0F * scale, 48.0F * scale};
+            renderer.fill_rect(button, panel_alt);
+            renderer.stroke_rect(button, std::max(1.0F, scale), border);
+            renderer.text(tool_names[i], button.x + 14.0F * scale,
+                          button.y + 31.0F * scale, 19.0F * scale, text, true);
+        }
     }
 
     renderer.text("ESC 退出    输入直接发送到 VM    F1 帮助", layout.safe,

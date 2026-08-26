@@ -162,6 +162,11 @@ int main(int argc, char** argv) {
                     break;
                 }
             }
+            // stdin closes when the game exits or crashes. Treat EOF as a
+            // stop request so the emulator never survives as an orphan.
+            if (commands.empty() && queue.reader_finished.load()) {
+                running = false;
+            }
             if (running) {
                 machine.tick(500'000);
             }

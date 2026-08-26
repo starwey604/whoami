@@ -233,6 +233,7 @@ GpuRenderer::GpuRenderer(int width, int height, std::string_view title)
     if (!impl_->window) {
         fail("create window");
     }
+    SDL_SetWindowMinimumSize(impl_->window, 960, 640);
     impl_->device = SDL_CreateGPUDevice(SDL_ShaderCross_GetHLSLShaderFormats(), true, nullptr);
     if (!impl_->device) {
         fail("create GPU device");
