@@ -1,3 +1,4 @@
+#include "game/request_feed.hpp"
 #include "render/gpu_renderer.hpp"
 #include "terminal/terminal.hpp"
 #include "vm/vm_client.hpp"
@@ -5,6 +6,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <exception>
 #include <iostream>
 #include <string>
@@ -65,7 +67,8 @@ std::string_view state_label(whoami::vm::protocol::State state) {
 
 void draw_mvp_shell(GpuRenderer& renderer, Terminal& terminal_model,
                     whoami::vm::protocol::State vm_state,
-                    std::string_view vm_detail) {
+                    std::string_view vm_detail,
+                    const whoami::game::RequestFeed& request_feed) {
     constexpr Color panel{0.018F, 0.075F, 0.105F, 0.96F};
     constexpr Color panel_alt{0.025F, 0.105F, 0.142F, 0.92F};
     constexpr Color border{0.12F, 0.53F, 0.68F, 0.58F};
@@ -96,16 +99,34 @@ void draw_mvp_shell(GpuRenderer& renderer, Terminal& terminal_model,
     renderer.stroke_rect(requests, std::max(1.0F, scale), border);
     renderer.text("INCOMING REQUESTS", requests.x + 20.0F * scale,
                   requests.y + 38.0F * scale, 19.0F * scale, muted);
-    const Rect card{requests.x + 16.0F * scale, requests.y + 68.0F * scale,
-                    requests.w - 32.0F * scale, 126.0F * scale};
-    renderer.fill_rect(card, panel_alt);
-    renderer.stroke_rect(card, 2.0F * scale, accent);
-    renderer.text("REQUEST 01", card.x + 16.0F * scale, card.y + 31.0F * scale,
-                  16.0F * scale, accent, true);
-    renderer.text("检查系统环境并报告", card.x + 16.0F * scale,
-                  card.y + 66.0F * scale, 20.0F * scale, text);
-    renderer.text("优先级：常规", card.x + 16.0F * scale,
-                  card.y + 99.0F * scale, 16.0F * scale, muted);
+    std::size_t request_count{};
+    const auto visible_requests = request_feed.visible_requests(request_count);
+    if (request_count == 0) {
+        renderer.text("等待用户连接…", requests.x + 20.0F * scale,
+                      requests.y + 88.0F * scale, 17.0F * scale, muted);
+    }
+    for (std::size_t index = 0; index < request_count; ++index) {
+        const auto& request = visible_requests[index];
+        const float progress = request.arrival_progress;
+        const float offset_x = (1.0F - progress) * -34.0F * scale;
+        const float card_height = 118.0F * scale;
+        const Rect card{requests.x + 16.0F * scale + offset_x,
+                        requests.y + (68.0F + index * 130.0F) * scale,
+                        requests.w - 32.0F * scale, card_height};
+        renderer.fill_rect(card, {panel_alt.r, panel_alt.g, panel_alt.b,
+                                  panel_alt.a * progress});
+        renderer.stroke_rect(card, (index + 1 == request_count ? 2.0F : 1.0F) * scale,
+                             {accent.r, accent.g, accent.b, progress});
+        renderer.text(request.id, card.x + 14.0F * scale, card.y + 27.0F * scale,
+                      15.0F * scale, {accent.r, accent.g, accent.b, progress}, true);
+        renderer.text(request.title, card.x + 14.0F * scale, card.y + 57.0F * scale,
+                      18.0F * scale, {text.r, text.g, text.b, progress});
+        renderer.text(request.objective, card.x + 14.0F * scale, card.y + 82.0F * scale,
+                      14.0F * scale, {muted.r, muted.g, muted.b, progress});
+        const std::string priority = "优先级：" + std::string(request.priority);
+        renderer.text(priority, card.x + 14.0F * scale, card.y + 104.0F * scale,
+                      14.0F * scale, {muted.r, muted.g, muted.b, progress});
+    }
 
     renderer.fill_rect(terminal, {0.006F, 0.031F, 0.045F, 0.99F});
     renderer.stroke_rect(terminal, 3.0F * scale, focus);
@@ -174,6 +195,8 @@ int main() {
         GpuRenderer renderer(1440, 900, "WHOAMI — AI Agent Workstation");
         Terminal terminal_model;
         whoami::vm::VMClient vm;
+        whoami::game::RequestFeed request_feed(
+            std::getenv("WHOAMI_REDUCED_MOTION") != nullptr);
         std::string vm_detail;
         vm.set_output_handler([&terminal_model](std::string_view bytes) {
             terminal_model.feed(bytes);
@@ -190,6 +213,7 @@ int main() {
 
         std::uint16_t sent_columns{};
         std::uint16_t sent_rows{};
+        auto previous_tick = SDL_GetTicksNS();
         bool running = true;
         while (running) {
             SDL_Event event{};
@@ -203,9 +227,12 @@ int main() {
                     terminal_model.key_down(event.key.key, event.key.mod);
                 }
             }
+            const auto current_tick = SDL_GetTicksNS();
+            request_feed.update(static_cast<float>(current_tick - previous_tick) / 1'000'000'000.0F);
+            previous_tick = current_tick;
             vm.update();
             renderer.begin_frame();
-            draw_mvp_shell(renderer, terminal_model, vm.state(), vm_detail);
+            draw_mvp_shell(renderer, terminal_model, vm.state(), vm_detail, request_feed);
             if (terminal_model.columns() != sent_columns || terminal_model.rows() != sent_rows) {
                 sent_columns = terminal_model.columns();
                 sent_rows = terminal_model.rows();
