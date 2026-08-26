@@ -60,6 +60,7 @@ target_link_libraries(whoami_vm PUBLIC tinyemu_riscv)
 target_link_libraries(${PROJECT_NAME} PUBLIC
         whoami_vm
         SDL3::SDL3 SDL3_image::SDL3_image SDL3_sound::SDL3_sound SDL3_ttf::SDL3_ttf
+        SDL3_shadercross::SDL3_shadercross PkgConfig::LIBTSM
         spdlog::spdlog tomlplusplus::tomlplusplus
         stdc++exp
 )
